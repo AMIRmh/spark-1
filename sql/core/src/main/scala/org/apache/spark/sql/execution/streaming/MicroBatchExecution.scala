@@ -762,7 +762,7 @@ class MicroBatchExecution(
   protected def markMicroBatchStart(): Unit = {
     if (!offsetLog.add(currentBatchId,
       availableOffsets.toOffsetSeq(sources, offsetSeqMetadata))) {
-      throw QueryExecutionErrors.concurrentStreamLogUpdate(currentBatchId)
+      throw new Exception("helki");// QueryExecutionErrors.concurrentStreamLogUpdate(currentBatchId)
     }
 
     logInfo(s"Committed offsets for batch $currentBatchId. " +
@@ -783,7 +783,7 @@ class MicroBatchExecution(
     watermarkTracker.updateWatermark(lastExecution.executedPlan)
     reportTimeTaken("commitOffsets") {
       if (!commitLog.add(currentBatchId, CommitMetadata(watermarkTracker.currentWatermark))) {
-        throw QueryExecutionErrors.concurrentStreamLogUpdate(currentBatchId)
+        throw new Exception("hello");// QueryExecutionErrors.concurrentStreamLogUpdate(currentBatchId)
       }
     }
     committedOffsets ++= availableOffsets

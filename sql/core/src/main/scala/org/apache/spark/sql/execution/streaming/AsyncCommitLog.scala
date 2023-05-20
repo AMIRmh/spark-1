@@ -23,7 +23,7 @@ import java.util.concurrent.{CompletableFuture, ConcurrentLinkedDeque, ThreadPoo
 import scala.collection.JavaConverters._
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.errors.QueryExecutionErrors
+import org.apache.spark.sql.errors.QueryExecutionErrors._
 
 /**
  * Implementation of CommitLog to perform asynchronous writes to storage
@@ -55,7 +55,7 @@ class AsyncCommitLog(sparkSession: SparkSession, path: String, executorService: 
       if (ret) {
         batchId
       } else {
-        throw QueryExecutionErrors.concurrentStreamLogUpdate(batchId)
+        throw new Exception("hello"); // concurrentStreamLogUpdate(batchId)
       }
     })
 

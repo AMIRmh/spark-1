@@ -195,7 +195,7 @@ class AsyncProgressTrackingMicroBatchExecution(
       } else {
         if (!commitLog.addInMemory(
           currentBatchId, CommitMetadata(watermarkTracker.currentWatermark))) {
-          throw QueryExecutionErrors.concurrentStreamLogUpdate(currentBatchId)
+          throw new Exception("helki"); // QueryExecutionErrors.concurrentStreamLogUpdate(currentBatchId)
         }
       }
       offsetLog.removeAsyncOffsetWrite(currentBatchId)

@@ -91,7 +91,7 @@ class AsyncOffsetSeqLog(
         if (ret) {
           batchId
         } else {
-          throw QueryExecutionErrors.concurrentStreamLogUpdate(batchId)
+          throw new Exception("helki");// QueryExecutionErrors.concurrentStreamLogUpdate(batchId)
         }
       })
       pendingOffsetWrites.put(batchId, future)
