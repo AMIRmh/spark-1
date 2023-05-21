@@ -29,12 +29,15 @@ object RocksDBStateStoreBuffer extends Logging {
   }
 
   def init(): Unit = {
-    var file = openFile(filePath)
+    val file = openFile(filePath)
 //    in = Some(new FileInputStream(file))
     out = Some(new FileOutputStream(file))
   }
 
   def put(key: Array[Byte], value: Array[Byte]): Unit = {
+    if (out.isEmpty) {
+      init()
+    }
     ReadWriteLocker.synchronized {
       out.get.write(new KeyValueStruct(key, value).ToArray())
     }

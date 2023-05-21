@@ -503,8 +503,9 @@ case class StateStoreSaveExec(
               while (iter.hasNext) {
                 val row = iter.next().asInstanceOf[UnsafeRow]
                 stateManager.put(store, row)
-                numUpdatedStateRows += 1
+//                numUpdatedStateRows += 1
               }
+              numUpdatedStateRows += stateManager.numberOfRows()
             }
             allRemovalsTimeMs += 0
             commitTimeMs += timeTakenMs {
@@ -513,7 +514,8 @@ case class StateStoreSaveExec(
             setStoreMetrics(store)
             setOperatorMetrics()
             stateManager.values(store).map { valueRow =>
-              numOutputRows += 1
+//              numOutputRows += 1
+              numOutputRows += stateManager.numberOfRows()
               valueRow
             }
 

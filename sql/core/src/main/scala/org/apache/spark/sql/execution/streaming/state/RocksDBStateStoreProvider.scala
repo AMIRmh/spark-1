@@ -29,13 +29,17 @@ import org.apache.spark.util.Utils
 
 private[sql] class RocksDBStateStoreProvider
   extends StateStoreProvider with Logging with Closeable {
+
   import RocksDBStateStoreProvider._
 
   class RocksDBStateStore(lastVersion: Long) extends StateStore {
     /** Trait and classes representing the internal state of the store */
     trait STATE
+
     case object UPDATING extends STATE
+
     case object COMMITTED extends STATE
+
     case object ABORTED extends STATE
 
     @volatile private var state: STATE = UPDATING
@@ -54,6 +58,19 @@ private[sql] class RocksDBStateStoreProvider
         isValidated = true
       }
       value
+    }
+
+
+    override def getEncoder(): Option[RocksDBStateEncoder] = {
+      Some(encoder)
+
+    }
+
+    override def put(key: Array[Byte], value: Array[Byte]): Unit = {
+      verify(state == UPDATING, "Cannot put after already committed or aborted")
+      verify(key != null, "Key cannot be null")
+      require(value != null, "Cannot put a null value")
+      rocksDB.put(key, value)
     }
 
     override def put(key: UnsafeRow, value: UnsafeRow): Unit = {
@@ -88,7 +105,13 @@ private[sql] class RocksDBStateStoreProvider
       rocksDB.prefixScan(prefix).map(kv => encoder.decode(kv))
     }
 
-    override def commit(): Long = synchronized {
+    override def commit(fromStateManager: Boolean): Long = synchronized {
+//      if (fromStateManager && counter > 0) {
+//        return -1
+//      }
+//      if (fromStateManager) {
+//        counter += 1
+//      }
       verify(state == UPDATING, "Cannot commit after already committed or aborted")
       val newVersion = rocksDB.commit()
       state = COMMITTED
@@ -99,22 +122,27 @@ private[sql] class RocksDBStateStoreProvider
     override def abort(): Unit = {
       verify(state == UPDATING || state == ABORTED, "Cannot abort after already committed")
       logInfo(s"Aborting ${version + 1} for $id")
-      rocksDB.rollback()
+//      rocksDB.rollback()
       state = ABORTED
     }
 
     override def metrics: StateStoreMetrics = {
       val rocksDBMetrics = rocksDB.metrics
+
       def commitLatencyMs(typ: String): Long = rocksDBMetrics.lastCommitLatencyMs.getOrElse(typ, 0L)
+
       def nativeOpsLatencyMillis(typ: String): Long = {
         rocksDBMetrics.nativeOpsMetrics.get(typ).map(_ * 1000).getOrElse(0)
       }
+
       def sumNativeOpsLatencyMillis(typ: String): Long = {
         rocksDBMetrics.nativeOpsHistograms.get(typ).map(_.sum / 1000).getOrElse(0)
       }
+
       def nativeOpsCount(typ: String): Long = {
         rocksDBMetrics.nativeOpsHistograms.get(typ).map(_.count).getOrElse(0)
       }
+
       def nativeOpsMetrics(typ: String): Long = {
         rocksDBMetrics.nativeOpsMetrics.getOrElse(typ, 0)
       }
@@ -166,12 +194,12 @@ private[sql] class RocksDBStateStoreProvider
   }
 
   override def init(
-      stateStoreId: StateStoreId,
-      keySchema: StructType,
-      valueSchema: StructType,
-      numColsPrefixKey: Int,
-      storeConf: StateStoreConf,
-      hadoopConf: Configuration): Unit = {
+                     stateStoreId: StateStoreId,
+                     keySchema: StructType,
+                     valueSchema: StructType,
+                     numColsPrefixKey: Int,
+                     storeConf: StateStoreConf,
+                     hadoopConf: Configuration): Unit = {
     this.stateStoreId_ = stateStoreId
     this.keySchema = keySchema
     this.valueSchema = valueSchema
@@ -227,7 +255,9 @@ private[sql] class RocksDBStateStoreProvider
   @volatile private var encoder: RocksDBStateEncoder = _
 
   private def verify(condition: => Boolean, msg: String): Unit = {
-    if (!condition) { throw new IllegalStateException(msg) }
+    if (!condition) {
+      throw new IllegalStateException(msg)
+    }
   }
 }
 
@@ -235,6 +265,7 @@ object RocksDBStateStoreProvider {
   // Version as a single byte that specifies the encoding of the row data in RocksDB
   val STATE_ENCODING_NUM_VERSION_BYTES = 1
   val STATE_ENCODING_VERSION: Byte = 0
+  var counter = 0
 
   // Native operation latencies report as latency in microseconds
   // as SQLMetrics support millis. Convert the value to millis

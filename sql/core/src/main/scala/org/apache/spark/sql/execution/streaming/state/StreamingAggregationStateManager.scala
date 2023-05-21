@@ -17,15 +17,23 @@
 
 package org.apache.spark.sql.execution.streaming.state
 
+import java.util.Base64
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.{GenerateUnsafeProjection, GenerateUnsafeRowJoiner}
+import org.apache.spark.sql.execution.streaming.state.StreamingAggregationStateManagerImplV2.{allKeys, counter}
 import org.apache.spark.sql.types.StructType
+
 
 /**
  * Base trait for state manager purposed to be used from streaming aggregations.
  */
 sealed trait StreamingAggregationStateManager extends Serializable {
+
+  def numberOfRows(): Int = {
+    1
+  }
 
   /** Extract columns consisting key from input row, and return the new row for key columns. */
   def getKey(row: UnsafeRow): UnsafeRow
@@ -66,9 +74,9 @@ object StreamingAggregationStateManager extends Logging {
   val legacyVersion = 1
 
   def createStateManager(
-      keyExpressions: Seq[Attribute],
-      inputRowAttributes: Seq[Attribute],
-      stateFormatVersion: Int): StreamingAggregationStateManager = {
+                          keyExpressions: Seq[Attribute],
+                          inputRowAttributes: Seq[Attribute],
+                          stateFormatVersion: Int): StreamingAggregationStateManager = {
     stateFormatVersion match {
       case 1 => new StreamingAggregationStateManagerImplV1(keyExpressions, inputRowAttributes)
       case 2 => new StreamingAggregationStateManagerImplV2(keyExpressions, inputRowAttributes)
@@ -78,15 +86,15 @@ object StreamingAggregationStateManager extends Logging {
 }
 
 abstract class StreamingAggregationStateManagerBaseImpl(
-    protected val keyExpressions: Seq[Attribute],
-    protected val inputRowAttributes: Seq[Attribute]) extends StreamingAggregationStateManager {
+                                                         protected val keyExpressions: Seq[Attribute],
+                                                         protected val inputRowAttributes: Seq[Attribute]) extends StreamingAggregationStateManager {
 
   @transient protected lazy val keyProjector =
     GenerateUnsafeProjection.generate(keyExpressions, inputRowAttributes)
 
   override def getKey(row: UnsafeRow): UnsafeRow = keyProjector(row)
 
-  override def commit(store: StateStore): Long = store.commit()
+  override def commit(store: StateStore): Long = store.commit(true)
 
   override def remove(store: StateStore, key: UnsafeRow): Unit = store.remove(key)
 
@@ -103,12 +111,12 @@ abstract class StreamingAggregationStateManagerBaseImpl(
  * - key: Same as key expressions.
  * - value: Same as input row attributes. The schema of value contains key expressions as well.
  *
- * @param keyExpressions The attributes of keys.
+ * @param keyExpressions     The attributes of keys.
  * @param inputRowAttributes The attributes of input row.
  */
 class StreamingAggregationStateManagerImplV1(
-    keyExpressions: Seq[Attribute],
-    inputRowAttributes: Seq[Attribute])
+                                              keyExpressions: Seq[Attribute],
+                                              inputRowAttributes: Seq[Attribute])
   extends StreamingAggregationStateManagerBaseImpl(keyExpressions, inputRowAttributes) {
 
   override def getStateValueSchema: StructType = inputRowAttributes.toStructType
@@ -130,6 +138,12 @@ class StreamingAggregationStateManagerImplV1(
   }
 }
 
+
+object StreamingAggregationStateManagerImplV2 {
+  var counter = 0
+  var allKeys = new Array[String](0)
+}
+
 /**
  * The implementation of StreamingAggregationStateManager for state version 2.
  * In state version 2, the schema of key and value in state are follow:
@@ -140,12 +154,12 @@ class StreamingAggregationStateManagerImplV1(
  * The schema of value is changed to optimize the memory/space usage in state, via removing
  * duplicated columns in key-value pair. Hence key columns are excluded from the schema of value.
  *
- * @param keyExpressions The attributes of keys.
+ * @param keyExpressions     The attributes of keys.
  * @param inputRowAttributes The attributes of input row.
  */
 class StreamingAggregationStateManagerImplV2(
-    keyExpressions: Seq[Attribute],
-    inputRowAttributes: Seq[Attribute])
+                                              keyExpressions: Seq[Attribute],
+                                              inputRowAttributes: Seq[Attribute])
   extends StreamingAggregationStateManagerBaseImpl(keyExpressions, inputRowAttributes) {
 
   private val valueExpressions: Seq[Attribute] = inputRowAttributes.diff(keyExpressions)
@@ -154,7 +168,7 @@ class StreamingAggregationStateManagerImplV2(
   // flag to check whether the row needs to be project into input row attributes after join
   // e.g. if the fields in the joined row are not in the expected order
   private val needToProjectToRestoreValue: Boolean =
-    keyValueJoinedExpressions != inputRowAttributes
+  keyValueJoinedExpressions != inputRowAttributes
 
   @transient private lazy val valueProjector =
     GenerateUnsafeProjection.generate(valueExpressions, inputRowAttributes)
@@ -176,10 +190,50 @@ class StreamingAggregationStateManagerImplV2(
     restoreOriginalRow(key, savedState)
   }
 
+  override def numberOfRows(): Int = {
+    if (counter % 5 == 0) {
+      return 5
+    }
+    0
+  }
+
+  def hasDuplicateKey(key: Array[Byte]): Boolean = {
+    if (allKeys.contains(Base64.getEncoder.encodeToString(key))) {
+      return true
+    }
+    false
+  }
+
   override def put(store: StateStore, row: UnsafeRow): Unit = {
+    counter += 1
     val key = keyProjector(row)
     val value = valueProjector(row)
-    store.put(key, value)
+    val encoder = store.getEncoder()
+    if (encoder.isEmpty) {
+      store.put(key, value)
+      return
+    }
+
+    val keyEncodedBytes = encoder.get.encodeKey(key)
+    if (hasDuplicateKey(keyEncodedBytes)) {
+      RocksDBStateStoreBuffer.get().foreach(kv => {
+        store.put(kv.getKey, kv.getValue)
+      })
+      allKeys = new Array[String](0)
+      allKeys = allKeys :+ Base64.getEncoder.encodeToString(keyEncodedBytes)
+      RocksDBStateStoreBuffer.put(keyEncodedBytes, encoder.get.encodeValue(value))
+      return
+    }
+
+    RocksDBStateStoreBuffer.put(keyEncodedBytes, encoder.get.encodeValue(value))
+    if (counter % 5 == 0) {
+      allKeys = new Array[String](0)
+      RocksDBStateStoreBuffer.get().foreach(kv => {
+        store.put(kv.getKey, kv.getValue)
+      })
+    } else {
+      allKeys = allKeys :+ Base64.getEncoder.encodeToString(keyEncodedBytes)
+    }
   }
 
   override def iterator(store: ReadStateStore): Iterator[UnsafeRowPair] = {

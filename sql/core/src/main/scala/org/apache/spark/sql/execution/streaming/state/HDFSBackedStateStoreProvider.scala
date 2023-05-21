@@ -79,6 +79,10 @@ private[sql] class HDFSBackedStateStoreProvider extends StateStoreProvider with 
 
     override def get(key: UnsafeRow): UnsafeRow = map.get(key)
 
+    override def getEncoder(): Option[RocksDBStateEncoder] = {
+      None
+    }
+
     override def iterator(): Iterator[UnsafeRowPair] = {
       map.iterator()
     }
@@ -116,6 +120,9 @@ private[sql] class HDFSBackedStateStoreProvider extends StateStoreProvider with 
       mapToUpdate.get(key)
     }
 
+    override def getEncoder(): Option[RocksDBStateEncoder] = {
+      None
+    }
     override def put(key: UnsafeRow, value: UnsafeRow): Unit = {
       require(value != null, "Cannot put a null value")
       verify(state == UPDATING, "Cannot put after already committed or aborted")
@@ -134,7 +141,7 @@ private[sql] class HDFSBackedStateStoreProvider extends StateStoreProvider with 
     }
 
     /** Commit all the updates that have been made to the store, and return the new version. */
-    override def commit(): Long = {
+    override def commit(fromStateManager: Boolean): Long = {
       verify(state == UPDATING, "Cannot commit after already committed or aborted")
 
       try {
@@ -195,6 +202,7 @@ private[sql] class HDFSBackedStateStoreProvider extends StateStoreProvider with 
     override def toString(): String = {
       s"HDFSStateStore[id=(op=${id.operatorId},part=${id.partitionId}),dir=$baseDir]"
     }
+
   }
 
   def getMetricsForProvider(): Map[String, Long] = synchronized {

@@ -64,6 +64,8 @@ trait ReadStateStore {
    */
   def get(key: UnsafeRow): UnsafeRow
 
+  def getEncoder(): Option[RocksDBStateEncoder]
+
   /**
    * Return an iterator containing all the key-value pairs which are matched with
    * the given prefix key.
@@ -105,6 +107,9 @@ trait StateStore extends ReadStateStore {
    * in the params can be reused, and must make copies of the data as needed for persistence.
    */
   def put(key: UnsafeRow, value: UnsafeRow): Unit
+  def put(key: Array[Byte], value: Array[Byte]): Unit = {
+
+  }
 
   /**
    * Remove a single non-null key.
@@ -116,7 +121,7 @@ trait StateStore extends ReadStateStore {
    * Implementations should ensure that no more updates (puts, removes) can be after a commit in
    * order to avoid incorrect usage.
    */
-  def commit(): Long
+  def commit(fromStateManager: Boolean = false): Long
 
   /**
    * Abort all the updates that have been made to the store. Implementations should ensure that
@@ -150,6 +155,10 @@ class WrappedReadStateStore(store: StateStore) extends ReadStateStore {
   override def version: Long = store.version
 
   override def get(key: UnsafeRow): UnsafeRow = store.get(key)
+
+  override def getEncoder(): Option[RocksDBStateEncoder] = {
+    None
+  }
 
   override def iterator(): Iterator[UnsafeRowPair] = store.iterator()
 

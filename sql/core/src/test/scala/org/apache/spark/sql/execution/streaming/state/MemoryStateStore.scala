@@ -31,11 +31,14 @@ class MemoryStateStore extends StateStore() {
 
   override def get(key: UnsafeRow): UnsafeRow = map.get(key)
 
+  override def getEncoder(): Option[RocksDBStateEncoder] = {
+    None
+  }
   override def put(key: UnsafeRow, newValue: UnsafeRow): Unit = map.put(key.copy(), newValue.copy())
 
   override def remove(key: UnsafeRow): Unit = map.remove(key)
 
-  override def commit(): Long = version + 1
+  override def commit(fromStateMaanger: Boolean = false): Long = version + 1
 
   override def abort(): Unit = {}
 
