@@ -53,8 +53,8 @@ object RocksDBStateStoreBuffer extends Logging {
         out.get.getChannel.position(0)
         bytes = Files.readAllBytes(Paths.get(filePath))
         init()
+        KeyValueStruct.ParseBytes(bytes, counter)
       }
-      KeyValueStruct.ParseBytes(bytes, counter)
     } finally {
       counter = 0
     }

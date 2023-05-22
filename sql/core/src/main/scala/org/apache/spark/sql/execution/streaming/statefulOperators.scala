@@ -503,6 +503,7 @@ case class StateStoreSaveExec(
             allUpdatesTimeMs += timeTakenMs {
               while (iter.hasNext) {
                 val row = iter.next().asInstanceOf[UnsafeRow]
+                stateManager.numberOfIterations = conf.settings.get("spark.number.iterations").toInt
                 stateManager.put(store, row)
                 numUpdatedStateRows += 1
               }

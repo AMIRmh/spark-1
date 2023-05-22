@@ -21,7 +21,7 @@ import java.util.Base64
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.{GenerateUnsafeProjection, GenerateUnsafeRowJoiner}
-import org.apache.spark.sql.execution.streaming.state.StreamingAggregationStateManagerImplV2.{allKeys, counter, numberOfIterations}
+import org.apache.spark.sql.execution.streaming.state.StreamingAggregationStateManagerImplV2.{RocksDBBufferLock, allKeys, counter}
 import org.apache.spark.sql.types.StructType
 
 
@@ -29,6 +29,8 @@ import org.apache.spark.sql.types.StructType
  * Base trait for state manager purposed to be used from streaming aggregations.
  */
 sealed trait StreamingAggregationStateManager extends Serializable {
+
+  var numberOfIterations = 10000
 
   def numberOfRows(): Int = {
     1
@@ -142,7 +144,9 @@ class StreamingAggregationStateManagerImplV1(
 object StreamingAggregationStateManagerImplV2 {
   var counter = 0
   var allKeys = new Array[String](0)
-  val numberOfIterations = 10000
+
+  object RocksDBBufferLock
+  //  val numberOfIterations = 10000
 }
 
 /**
@@ -215,27 +219,40 @@ class StreamingAggregationStateManagerImplV2(
     }
 
     val keyEncodedBytes = encoder.get.encodeKey(key)
-//    if (hasDuplicateKey(keyEncodedBytes)) {
-//
-//      RocksDBStateStoreBuffer.get().foreach(kv => {
-//        store.put(kv.getKey, kv.getValue)
-//      })
-//      allKeys = new Array[String](0)
-//      allKeys = allKeys :+ Base64.getEncoder.encodeToString(keyEncodedBytes)
-//      RocksDBStateStoreBuffer.put(keyEncodedBytes, encoder.get.encodeValue(value))
-//      return
-//    }
+    //    if (hasDuplicateKey(keyEncodedBytes)) {
+    //
+    //      RocksDBStateStoreBuffer.get().foreach(kv => {
+    //        store.put(kv.getKey, kv.getValue)
+    //      })
+    //      allKeys = new Array[String](0)
+    //      allKeys = allKeys :+ Base64.getEncoder.encodeToString(keyEncodedBytes)
+    //      RocksDBStateStoreBuffer.put(keyEncodedBytes, encoder.get.encodeValue(value))
+    //      return
+    //    }
 
     RocksDBStateStoreBuffer.put(keyEncodedBytes, encoder.get.encodeValue(value))
-    if (counter % numberOfIterations == 0) {
-//      allKeys = new Array[String](0)
-      RocksDBStateStoreBuffer.get().foreach(kv => {
-        store.put(kv.getKey, kv.getValue)
-      })
-    } else {
-//      allKeys = allKeys :+ Base64.getEncoder.encodeToString(keyEncodedBytes)
+    RocksDBBufferLock.synchronized {
+      try {
+        if (counter % numberOfIterations == 0) {
+          //      allKeys = new Array[String](0)
+          RocksDBStateStoreBuffer.get().foreach(kv => {
+            store.put(kv.getKey, kv.getValue)
+          })
+        }
+        else {
+          //      allKeys = allKeys :+ Base64.getEncoder.encodeToString(keyEncodedBytes)
+        }
+      } catch {
+        case e: Exception => printf("hello")
+          printf("hellow2")
+          var a = 0
+          a += 1
+
+
+      }
     }
   }
+
 
   override def iterator(store: ReadStateStore): Iterator[UnsafeRowPair] = {
     store.iterator().map(rowPair => new UnsafeRowPair(rowPair.key, restoreOriginalRow(rowPair)))
