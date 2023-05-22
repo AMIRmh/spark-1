@@ -435,8 +435,9 @@ case class StateStoreRestoreExec(
         } else {
           iter.flatMap { row =>
             val key = stateManager.getKey(row.asInstanceOf[UnsafeRow])
-            val restoredRow = stateManager.get(store, key)
-            val outputRows = Option(restoredRow).toSeq :+ row
+//            val restoredRow = stateManager.get(store, key)
+//            val outputRows = Option(restoredRow).toSeq :+ row
+            val outputRows = stateManager.get(store, key) :+ row
             numOutputRows += outputRows.size
             outputRows
           }
@@ -503,9 +504,9 @@ case class StateStoreSaveExec(
               while (iter.hasNext) {
                 val row = iter.next().asInstanceOf[UnsafeRow]
                 stateManager.put(store, row)
-//                numUpdatedStateRows += 1
+                numUpdatedStateRows += 1
               }
-              numUpdatedStateRows += stateManager.numberOfRows()
+//              numUpdatedStateRows += stateManager.numberOfRows()
             }
             allRemovalsTimeMs += 0
             commitTimeMs += timeTakenMs {

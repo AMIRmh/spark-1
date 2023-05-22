@@ -157,7 +157,7 @@ class WrappedReadStateStore(store: StateStore) extends ReadStateStore {
   override def get(key: UnsafeRow): UnsafeRow = store.get(key)
 
   override def getEncoder(): Option[RocksDBStateEncoder] = {
-    None
+    store.getEncoder()
   }
 
   override def iterator(): Iterator[UnsafeRowPair] = store.iterator()

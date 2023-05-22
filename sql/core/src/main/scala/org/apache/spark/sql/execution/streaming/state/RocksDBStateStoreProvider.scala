@@ -63,7 +63,6 @@ private[sql] class RocksDBStateStoreProvider
 
     override def getEncoder(): Option[RocksDBStateEncoder] = {
       Some(encoder)
-
     }
 
     override def put(key: Array[Byte], value: Array[Byte]): Unit = {

@@ -13,6 +13,7 @@ object RocksDBStateStoreBuffer extends Logging {
   var out: Option[FileOutputStream] = None
   var position = 0
   var filePath = "/tmp/cache"
+  var counter = 0
 
   private object ReadWriteLocker
 
@@ -40,20 +41,23 @@ object RocksDBStateStoreBuffer extends Logging {
     }
     ReadWriteLocker.synchronized {
       out.get.write(new KeyValueStruct(key, value).ToArray())
+      counter += 1
     }
   }
 
   def get(): Array[KeyValueStruct] = {
-    var bytes: Array[Byte] = new Array[Byte](0)
-    ReadWriteLocker.synchronized {
-      out.get.flush()
-      //      in.get.getChannel.position(0)
-      out.get.getChannel.position(0)
-      bytes = Files.readAllBytes(Paths.get(filePath))
-      //      in.get.read()
-      init()
+    try {
+      var bytes: Array[Byte] = new Array[Byte](0)
+      ReadWriteLocker.synchronized {
+        out.get.flush()
+        out.get.getChannel.position(0)
+        bytes = Files.readAllBytes(Paths.get(filePath))
+        init()
+      }
+      KeyValueStruct.ParseBytes(bytes, counter)
+    } finally {
+      counter = 0
     }
-    KeyValueStruct.ParseBytes(bytes)
   }
 }
 
@@ -79,10 +83,11 @@ class KeyValueStruct(key: Array[Byte], value: Array[Byte]) {
 }
 
 object KeyValueStruct {
-  def ParseBytes(bytes: Array[Byte]): Array[KeyValueStruct] = {
-    var list: Array[KeyValueStruct] = new Array[KeyValueStruct](0)
+  def ParseBytes(bytes: Array[Byte], counter: Int): Array[KeyValueStruct] = {
+    val list: Array[KeyValueStruct] = new Array[KeyValueStruct](counter)
     val len = bytes.length
     var pos = 0
+    var i = 0;
     while (pos < len) {
       var size = BigInt(bytes.slice(pos, pos + 4)).intValue()
       pos += 4
@@ -92,8 +97,11 @@ object KeyValueStruct {
       pos += 4
       val value = bytes.slice(pos, pos + size)
       pos += size
-      list = list :+ new KeyValueStruct(key, value)
+      list(i) = new KeyValueStruct(key, value)
+      i += 1
+//      list = list :+ new KeyValueStruct(key, value)
     }
+
     list
   }
 }

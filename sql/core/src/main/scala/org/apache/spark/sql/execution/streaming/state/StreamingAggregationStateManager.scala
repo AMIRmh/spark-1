@@ -18,11 +18,10 @@
 package org.apache.spark.sql.execution.streaming.state
 
 import java.util.Base64
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.{GenerateUnsafeProjection, GenerateUnsafeRowJoiner}
-import org.apache.spark.sql.execution.streaming.state.StreamingAggregationStateManagerImplV2.{allKeys, counter}
+import org.apache.spark.sql.execution.streaming.state.StreamingAggregationStateManagerImplV2.{allKeys, counter, numberOfIterations}
 import org.apache.spark.sql.types.StructType
 
 
@@ -42,7 +41,8 @@ sealed trait StreamingAggregationStateManager extends Serializable {
   def getStateValueSchema: StructType
 
   /** Get the current value of a non-null key from the target state store. */
-  def get(store: ReadStateStore, key: UnsafeRow): UnsafeRow
+  //  def get(store: ReadStateStore, key: UnsafeRow): UnsafeRow
+  def get(store: ReadStateStore, key: UnsafeRow): Seq[UnsafeRow]
 
   /**
    * Put a new value for a non-null key to the target state store. Note that key will be
@@ -121,8 +121,8 @@ class StreamingAggregationStateManagerImplV1(
 
   override def getStateValueSchema: StructType = inputRowAttributes.toStructType
 
-  override def get(store: ReadStateStore, key: UnsafeRow): UnsafeRow = {
-    store.get(key)
+  override def get(store: ReadStateStore, key: UnsafeRow): Seq[UnsafeRow] = {
+    Option(store.get(key)).toSeq
   }
 
   override def put(store: StateStore, row: UnsafeRow): Unit = {
@@ -142,6 +142,7 @@ class StreamingAggregationStateManagerImplV1(
 object StreamingAggregationStateManagerImplV2 {
   var counter = 0
   var allKeys = new Array[String](0)
+  val numberOfIterations = 10000
 }
 
 /**
@@ -181,18 +182,17 @@ class StreamingAggregationStateManagerImplV2(
 
   override def getStateValueSchema: StructType = valueExpressions.toStructType
 
-  override def get(store: ReadStateStore, key: UnsafeRow): UnsafeRow = {
+  override def get(store: ReadStateStore, key: UnsafeRow): Seq[UnsafeRow] = {
     val savedState = store.get(key)
     if (savedState == null) {
-      return savedState
+      return Option(savedState).toSeq
     }
-
-    restoreOriginalRow(key, savedState)
+    Option(restoreOriginalRow(key, savedState)).toSeq
   }
 
   override def numberOfRows(): Int = {
-    if (counter % 5 == 0) {
-      return 5
+    if (counter % numberOfIterations == 0) {
+      return numberOfIterations
     }
     0
   }
@@ -215,24 +215,25 @@ class StreamingAggregationStateManagerImplV2(
     }
 
     val keyEncodedBytes = encoder.get.encodeKey(key)
-    if (hasDuplicateKey(keyEncodedBytes)) {
-      RocksDBStateStoreBuffer.get().foreach(kv => {
-        store.put(kv.getKey, kv.getValue)
-      })
-      allKeys = new Array[String](0)
-      allKeys = allKeys :+ Base64.getEncoder.encodeToString(keyEncodedBytes)
-      RocksDBStateStoreBuffer.put(keyEncodedBytes, encoder.get.encodeValue(value))
-      return
-    }
+//    if (hasDuplicateKey(keyEncodedBytes)) {
+//
+//      RocksDBStateStoreBuffer.get().foreach(kv => {
+//        store.put(kv.getKey, kv.getValue)
+//      })
+//      allKeys = new Array[String](0)
+//      allKeys = allKeys :+ Base64.getEncoder.encodeToString(keyEncodedBytes)
+//      RocksDBStateStoreBuffer.put(keyEncodedBytes, encoder.get.encodeValue(value))
+//      return
+//    }
 
     RocksDBStateStoreBuffer.put(keyEncodedBytes, encoder.get.encodeValue(value))
-    if (counter % 5 == 0) {
-      allKeys = new Array[String](0)
+    if (counter % numberOfIterations == 0) {
+//      allKeys = new Array[String](0)
       RocksDBStateStoreBuffer.get().foreach(kv => {
         store.put(kv.getKey, kv.getValue)
       })
     } else {
-      allKeys = allKeys :+ Base64.getEncoder.encodeToString(keyEncodedBytes)
+//      allKeys = allKeys :+ Base64.getEncoder.encodeToString(keyEncodedBytes)
     }
   }
 
