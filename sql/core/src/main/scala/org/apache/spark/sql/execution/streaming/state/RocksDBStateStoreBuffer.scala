@@ -11,9 +11,13 @@ object RocksDBStateStoreBuffer extends Logging {
   var in: Option[FileInputStream] = None
   var out: Option[FileOutputStream] = None
   var position = 0
-  var filePath = "/tmp/cache"
-  var counter = 0
-  private val writeCache = new Array[Array[Byte]](15000)
+  var filePath = "/tmp/sparkBuffer/cache"
+  private var getFileIndex = 0
+  private var writeFileIndex = 0
+  private var writeCounter = 0
+  private val writeCacheSize = 15000
+  private val writeCache = new Array[Array[Byte]](writeCacheSize)
+  private var getSnapPositionArray = new Array[Int](0)
 
   private object ReadWriteLocker
 
@@ -30,7 +34,7 @@ object RocksDBStateStoreBuffer extends Logging {
   }
 
   def init(): Unit = {
-    val file = openFile(filePath)
+    val file = openFile(filePath + writeFileIndex)
     //    in = Some(new FileInputStream(file))
     out = Some(new FileOutputStream(file))
   }
@@ -40,12 +44,16 @@ object RocksDBStateStoreBuffer extends Logging {
       init()
     }
     ReadWriteLocker.synchronized {
-      if (counter % writeCache.length == 0 && counter != 0) {
-        out.get.write(writeCacheToArray())
+      if (writeCounter % writeCache.length == 0 && writeCounter != 0) {
+        val cache = writeCacheToArray()
+        getSnapPositionArray = getSnapPositionArray :+ cache.length
+        out.get.write(cache)
+        writeFileIndex += 1
+        init()
 //        out.get.write(new KeyValueStruct(key, value).ToArray())
       }
-      writeCache(counter % writeCache.length) = new KeyValueStruct(key, value).ToArray()
-      counter += 1
+      writeCache(writeCounter % writeCacheSize) = new KeyValueStruct(key, value).ToArray()
+      writeCounter += 1
     }
   }
 
@@ -66,15 +74,20 @@ object RocksDBStateStoreBuffer extends Logging {
   def get(): Array[KeyValueStruct] = {
     try {
       var bytes: Array[Byte] = new Array[Byte](0)
-      ReadWriteLocker.synchronized {
-        out.get.flush()
-        out.get.getChannel.position(0)
-        bytes = Files.readAllBytes(Paths.get(filePath))
-        init()
-        KeyValueStruct.ParseBytes(bytes, counter)
-      }
+      bytes = Files.readAllBytes(Paths.get(filePath + getFileIndex))
+      KeyValueStruct.ParseBytes(bytes, writeCounter)
+//      ReadWriteLocker.synchronized {
+//        out.get.flush()
+//        out.get.getChannel.position(0)
+//        bytes = Files.readAllBytes(Paths.get(filePath))
+//        init()
+//        KeyValueStruct.ParseBytes(bytes, writeCounter)
+//      }
     } finally {
-      counter = 0
+      writeCounter = 0
+      Files.delete(Paths.get(filePath + getFileIndex))
+      getFileIndex += 1
+
     }
   }
 }

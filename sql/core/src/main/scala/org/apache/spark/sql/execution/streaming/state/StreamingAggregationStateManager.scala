@@ -231,7 +231,7 @@ class StreamingAggregationStateManagerImplV2(
     //    }
 
     RocksDBStateStoreBuffer.put(keyEncodedBytes, encoder.get.encodeValue(value))
-//    RocksDBBufferLock.synchronized {
+    RocksDBBufferLock.synchronized {
       try {
         if (counter % numberOfIterations == 0) {
           RocksDBStateStoreBuffer.get().foreach(kv => {
@@ -241,7 +241,7 @@ class StreamingAggregationStateManagerImplV2(
       } catch {
         case _: Throwable => printf("")
       }
-//    }
+    }
   }
 
 
