@@ -231,26 +231,17 @@ class StreamingAggregationStateManagerImplV2(
     //    }
 
     RocksDBStateStoreBuffer.put(keyEncodedBytes, encoder.get.encodeValue(value))
-    RocksDBBufferLock.synchronized {
+//    RocksDBBufferLock.synchronized {
       try {
         if (counter % numberOfIterations == 0) {
-          //      allKeys = new Array[String](0)
           RocksDBStateStoreBuffer.get().foreach(kv => {
             store.put(kv.getKey, kv.getValue)
           })
         }
-        else {
-          //      allKeys = allKeys :+ Base64.getEncoder.encodeToString(keyEncodedBytes)
-        }
       } catch {
-        case e: Exception => printf("hello")
-          printf("hellow2")
-          var a = 0
-          a += 1
-
-
+        case _: Throwable => printf("")
       }
-    }
+//    }
   }
 
 

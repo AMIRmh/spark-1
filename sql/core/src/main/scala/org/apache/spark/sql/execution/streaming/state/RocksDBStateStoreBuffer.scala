@@ -7,13 +7,13 @@ import java.nio.file.{Files, Paths}
 import org.apache.spark.internal.Logging
 
 
-
 object RocksDBStateStoreBuffer extends Logging {
   var in: Option[FileInputStream] = None
   var out: Option[FileOutputStream] = None
   var position = 0
   var filePath = "/tmp/cache"
   var counter = 0
+  private val writeCache = new Array[Array[Byte]](15000)
 
   private object ReadWriteLocker
 
@@ -23,7 +23,7 @@ object RocksDBStateStoreBuffer extends Logging {
 
     if (file.exists()) file.delete()
 
-//    if (!file.exists()) file.createNewFile()
+    //    if (!file.exists()) file.createNewFile()
     file.createNewFile()
 
     file
@@ -31,7 +31,7 @@ object RocksDBStateStoreBuffer extends Logging {
 
   def init(): Unit = {
     val file = openFile(filePath)
-//    in = Some(new FileInputStream(file))
+    //    in = Some(new FileInputStream(file))
     out = Some(new FileOutputStream(file))
   }
 
@@ -40,9 +40,27 @@ object RocksDBStateStoreBuffer extends Logging {
       init()
     }
     ReadWriteLocker.synchronized {
-      out.get.write(new KeyValueStruct(key, value).ToArray())
+      if (counter % writeCache.length == 0 && counter != 0) {
+        out.get.write(writeCacheToArray())
+//        out.get.write(new KeyValueStruct(key, value).ToArray())
+      }
+      writeCache(counter % writeCache.length) = new KeyValueStruct(key, value).ToArray()
       counter += 1
     }
+  }
+
+  private def writeCacheToArray(): Array[Byte] = {
+    var sumSize = 0
+    for (kv <- writeCache) {
+      sumSize += kv.length
+    }
+    val result = new Array[Byte](sumSize)
+    var pos = 0
+    for (kv <- writeCache) {
+      Array.copy(kv, 0, result, pos, kv.length)
+      pos += kv.length
+    }
+    result
   }
 
   def get(): Array[KeyValueStruct] = {
@@ -70,15 +88,36 @@ class KeyValueStruct(key: Array[Byte], value: Array[Byte]) {
   def getValue: Array[Byte] = {
     value
   }
+
   def ToArray(): Array[Byte] = {
 
     val keyLenOrig = BigInt(key.length).toByteArray
-    val keyLen = new Array[Byte](4 - keyLenOrig.length) ++ keyLenOrig
+    val keyZero = new Array[Byte](4 - keyLenOrig.length)
+    //    val keyLen = new Array[Byte](4 - keyLenOrig.length) ++ keyLenOrig
+    val keyLen = new Array[Byte](keyLenOrig.length + keyZero.length)
+    Array.copy(keyZero, 0, keyLen, 0, keyZero.length)
+    Array.copy(keyLenOrig, 0, keyLen, keyZero.length, keyLenOrig.length)
 
 
     val valLenOrig = BigInt(value.length).toByteArray
-    val valLen = new Array[Byte](4 - valLenOrig.length) ++ valLenOrig
-    keyLen ++ key ++ valLen ++ value
+    val valueZero = new Array[Byte](4 - valLenOrig.length)
+//    val valLen = new Array[Byte](4 - valLenOrig.length) ++ valLenOrig
+    val valLen = new Array[Byte](valLenOrig.length + valueZero.length)
+    Array.copy(valueZero, 0, valLen, 0, valueZero.length)
+    Array.copy(valLenOrig, 0, valLen, valueZero.length, valLenOrig.length)
+
+
+    val result = new Array[Byte](keyLen.length + key.length + valLen.length + value.length)
+    var pos = 0
+    Array.copy(keyLen, 0, result, pos, keyLen.length)
+    pos += keyLen.length
+    Array.copy(key, 0, result, pos, key.length)
+    pos += key.length
+    Array.copy(valLen, 0, result, pos, valLen.length)
+    pos += valLen.length
+    Array.copy(value, 0, result, pos, value.length)
+    result
+    //    keyLen ++ key ++ valLen ++ value
   }
 }
 
@@ -99,7 +138,7 @@ object KeyValueStruct {
       pos += size
       list(i) = new KeyValueStruct(key, value)
       i += 1
-//      list = list :+ new KeyValueStruct(key, value)
+      //      list = list :+ new KeyValueStruct(key, value)
     }
 
     list
