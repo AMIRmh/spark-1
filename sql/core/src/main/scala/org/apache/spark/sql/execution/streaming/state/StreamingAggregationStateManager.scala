@@ -21,7 +21,7 @@ import java.util.Base64
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.{GenerateUnsafeProjection, GenerateUnsafeRowJoiner}
-import org.apache.spark.sql.execution.streaming.state.StreamingAggregationStateManagerImplV2.{RocksDBBufferLock, allKeys, counter}
+import org.apache.spark.sql.execution.streaming.state.StreamingAggregationStateManagerImplV2.{RocksDBBufferLock, counter}
 import org.apache.spark.sql.types.StructType
 
 
@@ -143,10 +143,7 @@ class StreamingAggregationStateManagerImplV1(
 
 object StreamingAggregationStateManagerImplV2 {
   var counter = 0
-  var allKeys = new Array[String](0)
-
   object RocksDBBufferLock
-  //  val numberOfIterations = 10000
 }
 
 /**
@@ -201,13 +198,6 @@ class StreamingAggregationStateManagerImplV2(
     0
   }
 
-  def hasDuplicateKey(key: Array[Byte]): Boolean = {
-    if (allKeys.contains(Base64.getEncoder.encodeToString(key))) {
-      return true
-    }
-    false
-  }
-
   override def put(store: StateStore, row: UnsafeRow): Unit = {
     counter += 1
     val key = keyProjector(row)
@@ -219,16 +209,6 @@ class StreamingAggregationStateManagerImplV2(
     }
 
     val keyEncodedBytes = encoder.get.encodeKey(key)
-    //    if (hasDuplicateKey(keyEncodedBytes)) {
-    //
-    //      RocksDBStateStoreBuffer.get().foreach(kv => {
-    //        store.put(kv.getKey, kv.getValue)
-    //      })
-    //      allKeys = new Array[String](0)
-    //      allKeys = allKeys :+ Base64.getEncoder.encodeToString(keyEncodedBytes)
-    //      RocksDBStateStoreBuffer.put(keyEncodedBytes, encoder.get.encodeValue(value))
-    //      return
-    //    }
 
     RocksDBStateStoreBuffer.put(keyEncodedBytes, encoder.get.encodeValue(value))
     RocksDBBufferLock.synchronized {
