@@ -3,39 +3,42 @@ package org.apache.spark.sql.execution.streaming.state
 
 import java.io._
 import java.nio.file.{Files, Paths}
-
 import org.apache.spark.internal.Logging
+
+import scala.reflect.io.Directory
 
 
 object RocksDBStateStoreBuffer extends Logging {
-  var in: Option[FileInputStream] = None
   var out: Option[FileOutputStream] = None
   var position = 0
   var filePath = "/tmp/sparkBuffer/cache"
+  private val directoryPath = "/tmp/sparkBuffer"
   private var getFileIndex = 0
   private var writeFileIndex = 0
   private var writeCounter = 0
-  private val writeCacheSize = 15000
+  private val writeCacheSize = 100
   private val writeCache = new Array[Array[Byte]](writeCacheSize)
-  private var getSnapPositionArray = new Array[Int](0)
+  private var firstRun = true
 
   private object ReadWriteLocker
 
   private def openFile(filePath: String): File = {
     val path = Paths.get(filePath)
     val file = path.toFile
-
     if (file.exists()) file.delete()
-
-    //    if (!file.exists()) file.createNewFile()
     file.createNewFile()
-
     file
   }
 
   def init(): Unit = {
+    if (firstRun) {
+      firstRun = false
+      val directory = new Directory(new File(directoryPath))
+
+      directory.deleteRecursively()
+      directory.createDirectory()
+    }
     val file = openFile(filePath + writeFileIndex)
-    //    in = Some(new FileInputStream(file))
     out = Some(new FileOutputStream(file))
   }
 
@@ -44,13 +47,11 @@ object RocksDBStateStoreBuffer extends Logging {
       init()
     }
     ReadWriteLocker.synchronized {
-      if (writeCounter % writeCache.length == 0 && writeCounter != 0) {
+      if (writeCounter % writeCacheSize == 0 && writeCounter != 0) {
         val cache = writeCacheToArray()
-        getSnapPositionArray = getSnapPositionArray :+ cache.length
         out.get.write(cache)
         writeFileIndex += 1
         init()
-//        out.get.write(new KeyValueStruct(key, value).ToArray())
       }
       writeCache(writeCounter % writeCacheSize) = new KeyValueStruct(key, value).ToArray()
       writeCounter += 1
@@ -73,21 +74,11 @@ object RocksDBStateStoreBuffer extends Logging {
 
   def get(): Array[KeyValueStruct] = {
     try {
-      var bytes: Array[Byte] = new Array[Byte](0)
-      bytes = Files.readAllBytes(Paths.get(filePath + getFileIndex))
-      KeyValueStruct.ParseBytes(bytes, writeCounter)
-//      ReadWriteLocker.synchronized {
-//        out.get.flush()
-//        out.get.getChannel.position(0)
-//        bytes = Files.readAllBytes(Paths.get(filePath))
-//        init()
-//        KeyValueStruct.ParseBytes(bytes, writeCounter)
-//      }
+      val bytes = Files.readAllBytes(Paths.get(filePath + getFileIndex))
+      KeyValueStruct.ParseBytes(bytes, writeCacheSize)
     } finally {
-      writeCounter = 0
       Files.delete(Paths.get(filePath + getFileIndex))
       getFileIndex += 1
-
     }
   }
 }

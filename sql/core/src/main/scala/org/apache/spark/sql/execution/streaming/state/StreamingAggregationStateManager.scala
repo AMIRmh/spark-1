@@ -198,7 +198,7 @@ class StreamingAggregationStateManagerImplV2(
     0
   }
   override def put(store: StateStore, row: UnsafeRow): Unit = {
-    counter += 1
+
     val key = keyProjector(row)
     val value = valueProjector(row)
     val encoder = store.getEncoder()
@@ -211,6 +211,8 @@ class StreamingAggregationStateManagerImplV2(
 
     RocksDBStateStoreBuffer.put(keyEncodedBytes, encoder.get.encodeValue(value))
     RocksDBBufferLock.synchronized {
+      counter += 1
+//      printf("%d\r\n", counter)
       try {
         if (counter % numberOfIterations == 0) {
           RocksDBStateStoreBuffer.get().foreach(kv => {
@@ -218,7 +220,7 @@ class StreamingAggregationStateManagerImplV2(
           })
         }
       } catch {
-        case _: Throwable => printf("")
+        case _: Throwable => printf("") // e.printStackTrace(System.out)
       }
     }
   }
