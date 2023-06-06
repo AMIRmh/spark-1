@@ -197,7 +197,6 @@ class StreamingAggregationStateManagerImplV2(
     }
     0
   }
-
   override def put(store: StateStore, row: UnsafeRow): Unit = {
     counter += 1
     val key = keyProjector(row)

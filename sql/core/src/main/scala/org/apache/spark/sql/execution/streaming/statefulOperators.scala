@@ -507,7 +507,6 @@ case class StateStoreSaveExec(
                 stateManager.put(store, row)
                 numUpdatedStateRows += 1
               }
-//              numUpdatedStateRows += stateManager.numberOfRows()
             }
             allRemovalsTimeMs += 0
             commitTimeMs += timeTakenMs {
